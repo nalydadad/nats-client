@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import NATSChatClient
 
 final class PendingRequestsTests: XCTestCase {
@@ -19,7 +20,7 @@ final class PendingRequestsTests: XCTestCase {
         await p.register("r2")
 
         async let received = p.wait("r2")
-        try await Task.sleep(nanoseconds: 10_000_000) // 10ms
+        try await Task.sleep(nanoseconds: 10_000_000)  // 10ms
         await p.deliver("r2", payload: Data("world".utf8))
 
         let value = try await received
@@ -112,7 +113,8 @@ final class PendingRequestsTests: XCTestCase {
 
     private func assertThrowsCancellation(
         _ block: () async throws -> Void,
-        file: StaticString = #file, line: UInt = #line
+        file: StaticString = #file,
+        line: UInt = #line
     ) async {
         do {
             try await block()

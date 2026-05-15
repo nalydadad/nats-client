@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import NATSChatClient
 
 final class ChatClientTests: XCTestCase {
@@ -10,7 +11,9 @@ final class ChatClientTests: XCTestCase {
 
         do {
             _ = try await client.sendMessage(
-                roomID: "R1", siteID: "S1", content: "hi"
+                roomID: "R1",
+                siteID: "S1",
+                content: "hi"
             )
             XCTFail("Expected ChatClientError.notStarted")
         } catch ChatClientError.notStarted {
@@ -26,9 +29,9 @@ final class ChatClientTests: XCTestCase {
         let client = ChatClient(transport: transport, auth: auth)
 
         try await client.start()
-        try await client.start()             // idempotent
+        try await client.start()  // idempotent
         await client.stop()
-        await client.stop()                  // idempotent
+        await client.stop()  // idempotent
 
         // After stop, sending should throw .notStarted again.
         do {
@@ -48,7 +51,7 @@ final class ChatClientTests: XCTestCase {
 
         try await client.start()
         await client.stop()
-        try await client.start()                // can restart cleanly
+        try await client.start()  // can restart cleanly
         await client.stop()
     }
 
@@ -73,8 +76,8 @@ final class ChatClientTests: XCTestCase {
 
         // Inject a successful server reply on the response subject.
         let reply = """
-        {"id":"\(req.id)","roomId":"R1","userId":"u-1","userAccount":"alice","content":"hi","createdAt":"2026-05-15T00:00:00Z"}
-        """.data(using: .utf8)!
+            {"id":"\(req.id)","roomId":"R1","userId":"u-1","userAccount":"alice","content":"hi","createdAt":"2026-05-15T00:00:00Z"}
+            """.data(using: .utf8)!
         await transport.deliver(subject: "chat.user.alice.response.\(req.requestId)", payload: reply)
 
         let result = try await sendTask.value
@@ -97,7 +100,7 @@ final class ChatClientTests: XCTestCase {
         do {
             _ = try await client.sendMessage(roomID: "R", siteID: "S", content: "x")
             XCTFail("Expected .timeout")
-        } catch let ChatClientError.timeout(id) {
+        } catch ChatClientError.timeout(let id) {
             XCTAssertFalse(id.isEmpty)
         } catch {
             XCTFail("Wrong error: \(error)")
@@ -124,7 +127,7 @@ final class ChatClientTests: XCTestCase {
         do {
             _ = try await task.value
             XCTFail("Expected throw")
-        } catch let ChatClientError.server(code, message) {
+        } catch ChatClientError.server(let code, let message) {
             XCTAssertEqual(code, "forbidden")
             XCTAssertEqual(message, "forbidden")
         } catch {
@@ -147,7 +150,7 @@ final class ChatClientTests: XCTestCase {
         do {
             _ = try await task.value
             XCTFail("Expected timeout")
-        } catch let ChatClientError.timeout(id) {
+        } catch ChatClientError.timeout(let id) {
             XCTAssertEqual(id, req.requestId)
         } catch {
             XCTFail("Wrong error: \(error)")
@@ -155,8 +158,8 @@ final class ChatClientTests: XCTestCase {
 
         // Late reply must not crash and must be silently dropped.
         let reply = """
-        {"id":"\(req.id)","roomId":"R","userId":"u","userAccount":"alice","content":"x","createdAt":"now"}
-        """.data(using: .utf8)!
+            {"id":"\(req.id)","roomId":"R","userId":"u","userAccount":"alice","content":"x","createdAt":"now"}
+            """.data(using: .utf8)!
         await transport.deliver(subject: "chat.user.alice.response.\(req.requestId)", payload: reply)
         // Give the actor a moment to process — and assert we still pass.
         try await Task.sleep(nanoseconds: 20_000_000)
@@ -190,8 +193,8 @@ final class ChatClientTests: XCTestCase {
         for i in order {
             let r = reqs[i]
             let reply = """
-            {"id":"\(r.id)","roomId":"R","userId":"u","userAccount":"alice","content":"\(r.content)","createdAt":"t"}
-            """.data(using: .utf8)!
+                {"id":"\(r.id)","roomId":"R","userId":"u","userAccount":"alice","content":"\(r.content)","createdAt":"t"}
+                """.data(using: .utf8)!
             await transport.deliver(subject: "chat.user.alice.response.\(r.requestId)", payload: reply)
         }
 
@@ -201,11 +204,17 @@ final class ChatClientTests: XCTestCase {
         // Build content → requestId lookup from the publish records (order is non-deterministic).
         let requestIDByContent = Dictionary(uniqueKeysWithValues: reqs.map { ($0.content, $0.requestId) })
         for r in results {
-            XCTAssertEqual(r.requestID, requestIDByContent[r.content],
-                           "Result for \(r.content) should match its published requestId")
+            XCTAssertEqual(
+                r.requestID,
+                requestIDByContent[r.content],
+                "Result for \(r.content) should match its published requestId"
+            )
         }
-        XCTAssertEqual(Set(results.map(\.requestID)), Set(reqs.map(\.requestId)),
-                       "All three published requestIds should appear in the results")
+        XCTAssertEqual(
+            Set(results.map(\.requestID)),
+            Set(reqs.map(\.requestId)),
+            "All three published requestIds should appear in the results"
+        )
     }
 
     func test_sendMessage_invalidJSON_throwsInvalidPayload() async throws {
@@ -272,8 +281,8 @@ final class ChatClientTests: XCTestCase {
         // Reply to let sendMessage complete cleanly.
         let req = try JSONDecoder().decode(SentBodyJSON.self, from: pub.payload)
         let reply = """
-        {"id":"\(req.id)","roomId":"R","userId":"u","userAccount":"alice","content":"x","createdAt":"t"}
-        """.data(using: .utf8)!
+            {"id":"\(req.id)","roomId":"R","userId":"u","userAccount":"alice","content":"x","createdAt":"t"}
+            """.data(using: .utf8)!
         await transport.deliver(subject: "chat.user.alice.response.\(req.requestId)", payload: reply)
         _ = try await task.value
     }
@@ -286,7 +295,9 @@ final class ChatClientTests: XCTestCase {
 
         let task = Task { [client] in
             try await client.sendMessage(
-                roomID: "R", siteID: "S", content: "x",
+                roomID: "R",
+                siteID: "S",
+                content: "x",
                 threadParentMessageID: "p1",
                 threadParentMessageCreatedAt: 1_700_000_000_000,
                 quotedParentMessageID: "q1"
@@ -300,8 +311,8 @@ final class ChatClientTests: XCTestCase {
 
         let req = try JSONDecoder().decode(SentBodyJSON.self, from: pub.payload)
         let reply = """
-        {"id":"\(req.id)","roomId":"R","userId":"u","userAccount":"alice","content":"x","createdAt":"t","threadParentMessageId":"p1","threadParentMessageCreatedAt":1700000000000,"quotedParentMessageId":"q1"}
-        """.data(using: .utf8)!
+            {"id":"\(req.id)","roomId":"R","userId":"u","userAccount":"alice","content":"x","createdAt":"t","threadParentMessageId":"p1","threadParentMessageCreatedAt":1700000000000,"quotedParentMessageId":"q1"}
+            """.data(using: .utf8)!
         await transport.deliver(subject: "chat.user.alice.response.\(req.requestId)", payload: reply)
         let result = try await task.value
         XCTAssertEqual(result.threadParentMessageID, "p1")
@@ -328,8 +339,8 @@ final class ChatClientTests: XCTestCase {
         let pub = try await waitForPublish(in: transport)
         let req = try JSONDecoder().decode(SentBodyJSON.self, from: pub.payload)
         let reply = """
-        {"id":"\(req.id)","roomId":"R","userId":"u","userAccount":"alice","content":"x","createdAt":"t"}
-        """.data(using: .utf8)!
+            {"id":"\(req.id)","roomId":"R","userId":"u","userAccount":"alice","content":"x","createdAt":"t"}
+            """.data(using: .utf8)!
         await transport.deliver(subject: "chat.user.alice.response.\(req.requestId)", payload: reply)
         let result = await task.value
         XCTAssertNotNil(result)

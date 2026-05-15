@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import NATSChatClient
 
 final class SubjectsTests: XCTestCase {

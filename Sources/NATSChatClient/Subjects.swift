@@ -13,13 +13,13 @@ enum Subjects {
         let parts = subject.split(separator: ".", omittingEmptySubsequences: false)
         // Expect exactly 5 segments: chat / user / {account} / response / {requestID}
         guard parts.count == 5,
-              parts[0] == "chat",
-              parts[1] == "user",
-              parts[3] == "response",
-              !parts[2].isEmpty,
-              !parts[4].isEmpty,
-              !parts[2].contains("*"), !parts[2].contains(">"),
-              !parts[4].contains("*"), !parts[4].contains(">")
+            parts[0] == "chat",
+            parts[1] == "user",
+            parts[3] == "response",
+            !parts[2].isEmpty,
+            !parts[4].isEmpty,
+            !parts[2].contains("*"), !parts[2].contains(">"),
+            !parts[4].contains("*"), !parts[4].contains(">")
         else { return nil }
         return String(parts[4])
     }

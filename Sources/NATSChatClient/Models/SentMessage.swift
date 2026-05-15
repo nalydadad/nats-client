@@ -1,11 +1,11 @@
 public struct SentMessage: Sendable, Equatable {
-    public let id: String                              // 20-char base62
-    public let requestID: String                       // UUIDv7
+    public let id: String  // 20-char base62
+    public let requestID: String  // UUIDv7
     public let roomID: String
     public let userID: String
     public let userAccount: String
     public let content: String
-    public let createdAt: String                       // RFC 3339
+    public let createdAt: String  // RFC 3339
     public let threadParentMessageID: String?
     public let threadParentMessageCreatedAt: Int64?
     public let quotedParentMessageID: String?

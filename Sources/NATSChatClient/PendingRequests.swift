@@ -7,10 +7,10 @@ import Foundation
 actor PendingRequests {
 
     private enum Slot {
-        case expecting                                            // registered, no waiter yet
-        case pending(CheckedContinuation<Data, any Error>)        // suspended waiter
-        case buffered(Data)                                       // reply arrived before wait
-        case failed(any Error)                                    // fail before wait
+        case expecting  // registered, no waiter yet
+        case pending(CheckedContinuation<Data, any Error>)  // suspended waiter
+        case buffered(Data)  // reply arrived before wait
+        case failed(any Error)  // fail before wait
     }
 
     private var slots: [String: Slot] = [:]
@@ -55,7 +55,7 @@ actor PendingRequests {
         case .expecting:
             slots[id] = .buffered(payload)
         case .none, .buffered, .failed:
-            return                                                 // unknown or already done
+            return  // unknown or already done
         }
     }
 

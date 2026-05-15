@@ -49,19 +49,19 @@ enum UUIDv7 {
         bytes[1] = UInt8((unixMs >> 32) & 0xFF)
         bytes[2] = UInt8((unixMs >> 24) & 0xFF)
         bytes[3] = UInt8((unixMs >> 16) & 0xFF)
-        bytes[4] = UInt8((unixMs >> 8)  & 0xFF)
+        bytes[4] = UInt8((unixMs >> 8) & 0xFF)
         bytes[5] = UInt8(unixMs & 0xFF)
         // Version (0x7) in high nibble of byte 6 + high 4 bits of rand12.
         bytes[6] = 0x70 | UInt8((rand12 >> 8) & 0x0F)
         bytes[7] = UInt8(rand12 & 0xFF)
         // Variant + top of rand62
-        bytes[8]  = UInt8((variantedHigh16 >> 8) & 0xFF)
-        bytes[9]  = UInt8(variantedHigh16 & 0xFF)
+        bytes[8] = UInt8((variantedHigh16 >> 8) & 0xFF)
+        bytes[9] = UInt8(variantedHigh16 & 0xFF)
         bytes[10] = UInt8((rand62 >> 40) & 0xFF)
         bytes[11] = UInt8((rand62 >> 32) & 0xFF)
         bytes[12] = UInt8((rand62 >> 24) & 0xFF)
         bytes[13] = UInt8((rand62 >> 16) & 0xFF)
-        bytes[14] = UInt8((rand62 >> 8)  & 0xFF)
+        bytes[14] = UInt8((rand62 >> 8) & 0xFF)
         bytes[15] = UInt8(rand62 & 0xFF)
 
         return formatHex(bytes)
@@ -99,10 +99,7 @@ enum UUIDv7 {
         let hex = bytes.map { String(format: "%02x", $0) }.joined()
         // Insert hyphens: 8-4-4-4-12
         let chars = Array(hex)
-        return String(chars[0..<8])  + "-" +
-               String(chars[8..<12]) + "-" +
-               String(chars[12..<16]) + "-" +
-               String(chars[16..<20]) + "-" +
-               String(chars[20..<32])
+        return String(chars[0..<8]) + "-" + String(chars[8..<12]) + "-" + String(chars[12..<16]) + "-"
+            + String(chars[16..<20]) + "-" + String(chars[20..<32])
     }
 }

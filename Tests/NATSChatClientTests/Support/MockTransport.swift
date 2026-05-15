@@ -36,9 +36,12 @@ actor MockTransport: NATSTransport {
         let stream = AsyncStream<NATSMessage> { continuation = $0 }
         assert(subscriptions[subject] == nil, "MockTransport: duplicate subscription for \(subject)")
         subscriptions[subject] = continuation
-        return MockSubscription(stream: stream, onCancel: { [self, subject] in
-            await self.cancelSubscription(subject: subject)
-        })
+        return MockSubscription(
+            stream: stream,
+            onCancel: { [self, subject] in
+                await self.cancelSubscription(subject: subject)
+            }
+        )
     }
 
     // MARK: Test helpers
@@ -61,7 +64,7 @@ actor MockTransport: NATSTransport {
     private func matches(filter: String, subject: String) -> Bool {
         if filter == subject { return true }
         if filter.hasSuffix(".>") {
-            let prefix = String(filter.dropLast(1)) // keep trailing dot
+            let prefix = String(filter.dropLast(1))  // keep trailing dot
             return subject.hasPrefix(prefix) && subject.count > prefix.count
         }
         return false

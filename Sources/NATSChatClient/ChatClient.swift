@@ -31,7 +31,7 @@ public actor ChatClient {
         let gen = startGeneration
 
         let identity = try await auth.currentIdentity()
-        guard gen == startGeneration else { return }   // stop() ran during await
+        guard gen == startGeneration else { return }  // stop() ran during await
 
         let subject = Subjects.userResponseWildcard(account: identity.account)
         let sub = try await transport.subscribe(subject: subject)
@@ -143,7 +143,8 @@ public actor ChatClient {
         let decoder = JSONDecoder()
         // Error branch first.
         if let env = try? decoder.decode(ErrorEnvelopeDTO.self, from: data),
-           !env.error.isEmpty {
+            !env.error.isEmpty
+        {
             throw ChatClientError.server(code: env.code, message: env.error)
         }
         do {

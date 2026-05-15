@@ -12,7 +12,7 @@ concurrency:
 
 env:
   XCODE_VERSION: "16.2"
-  LIBRARY_SCHEME: "ChatClient"
+  LIBRARY_SCHEME: "NATSChatClient"
   DEMO_SCHEME: "ChatClientDemo"
   IOS_DESTINATION: "platform=iOS Simulator,name=iPhone 16,OS=latest"
 

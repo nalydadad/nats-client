@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import NATSChatClient
 
 final class IDGeneratorTests: XCTestCase {
@@ -11,8 +12,10 @@ final class IDGeneratorTests: XCTestCase {
 
     func test_base62_onlyUsesAllowedCharacters() {
         let id = Base62.randomID(length: 20)
-        XCTAssertTrue(id.allSatisfy { base62Charset.contains($0) },
-                      "Found out-of-alphabet character in \(id)")
+        XCTAssertTrue(
+            id.allSatisfy { base62Charset.contains($0) },
+            "Found out-of-alphabet character in \(id)"
+        )
     }
 
     func test_base62_producesDifferentValues() {
@@ -42,23 +45,30 @@ final class IDGeneratorTests: XCTestCase {
         // First char of the 4th group must be in {8,9,a,b}
         let parts = s.split(separator: "-")
         let variantChar = parts[3].first!
-        XCTAssertTrue("89ab".contains(variantChar),
-                      "Variant nibble was \(variantChar)")
+        XCTAssertTrue(
+            "89ab".contains(variantChar),
+            "Variant nibble was \(variantChar)"
+        )
     }
 
     func test_uuidv7_isHexAndLowercase() {
         let s = UUIDv7.next()
         let allowed = Set("0123456789abcdef-")
-        XCTAssertTrue(s.allSatisfy { allowed.contains($0) },
-                      "Found non-hex char in \(s)")
+        XCTAssertTrue(
+            s.allSatisfy { allowed.contains($0) },
+            "Found non-hex char in \(s)"
+        )
     }
 
     func test_uuidv7_isMonotonicAcrossRapidCalls() {
         var prev = UUIDv7.next()
         for _ in 0..<1000 {
             let next = UUIDv7.next()
-            XCTAssertLessThan(prev, next,
-                              "UUIDv7 not monotonic: \(prev) >= \(next)")
+            XCTAssertLessThan(
+                prev,
+                next,
+                "UUIDv7 not monotonic: \(prev) >= \(next)"
+            )
             prev = next
         }
     }
