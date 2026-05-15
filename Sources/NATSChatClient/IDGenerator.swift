@@ -1,7 +1,5 @@
-import Foundation
-
 enum Base62 {
-    static let alphabet: [Character] = Array(
+    private static let alphabet: [Character] = Array(
         "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
     )
 
