@@ -87,6 +87,27 @@ final class PendingRequestsTests: XCTestCase {
         XCTAssertEqual(got, Data("fresh".utf8))
     }
 
+    func test_discardPendingWaiter_resumesWithCancellationError() async {
+        let p = PendingRequests()
+        await p.register("rDiscard")
+
+        let task = Task<Data, Error> { try await p.wait("rDiscard") }
+
+        // Give the waiter time to suspend on the continuation.
+        try? await Task.sleep(nanoseconds: 5_000_000)
+
+        await p.discard("rDiscard")
+
+        do {
+            _ = try await task.value
+            XCTFail("Expected CancellationError")
+        } catch is CancellationError {
+            // ok
+        } catch {
+            XCTFail("Wrong error: \(error)")
+        }
+    }
+
     // MARK: helpers
 
     private func assertThrowsCancellation(

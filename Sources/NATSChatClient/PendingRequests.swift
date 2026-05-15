@@ -33,7 +33,8 @@ actor PendingRequests {
             slots.removeValue(forKey: id)
             throw err
         case .pending:
-            // Should never happen in practice — caller shouldn't double-wait.
+            // Not tested: fatalError cannot be caught by XCTest. Branch exists
+            // to surface internal misuse (double-wait) during development.
             fatalError("PendingRequests.wait called twice for \(id)")
         case .expecting, .none:
             return try await withCheckedThrowingContinuation { cont in
@@ -43,6 +44,8 @@ actor PendingRequests {
     }
 
     /// Routes a reply payload to the waiter (or buffers it).
+    /// If `id` is nil, the call is a no-op — this lets callers pass an optional
+    /// parse result (e.g., `Subjects.parseRequestID(...)`) directly.
     func deliver(_ id: String?, payload: Data) {
         guard let id = id else { return }
         switch slots[id] {
@@ -69,8 +72,12 @@ actor PendingRequests {
         }
     }
 
-    /// Drops the slot — used by senders on cleanup after success or after timeout.
+    /// Drops the slot. If a waiter is suspended on `.pending`, it is resumed
+    /// with `CancellationError` so the continuation contract is honoured.
     func discard(_ id: String) {
+        if case .pending(let cont) = slots[id] {
+            cont.resume(throwing: CancellationError())
+        }
         slots.removeValue(forKey: id)
     }
 
