@@ -27,11 +27,17 @@ enum UUIDv7 {
 
     /// Returns a new UUIDv7 string in canonical 8-4-4-4-12 lowercase hex.
     static func next() -> String {
-        var rng = SystemRandomNumberGenerator()
-        let (unixMs, rand12) = nextTimestampAndRand12(rng: &rng)
+        // RNG draws happen outside the locked section.
+        let nowMs = UInt64(Date().timeIntervalSince1970 * 1000)
+        let candidate12 = UInt16.random(in: 0...0x0FFF)
+        let rand64 = UInt64.random(in: 0...UInt64.max)
+
+        let (unixMs, rand12) = nextTimestampAndCounter(
+            nowMs: nowMs,
+            candidate12: candidate12
+        )
 
         // 62 random bits for the trailing portion.
-        let rand64 = UInt64.random(in: 0...UInt64.max, using: &rng)
         // Variant bits: top two bits of byte 8 must be 10.
         let rand62 = rand64 & 0x3FFF_FFFF_FFFF_FFFF
         let variantedHigh16 = UInt16((rand62 >> 48) & 0xFFFF) | 0x8000
@@ -61,24 +67,25 @@ enum UUIDv7 {
         return formatHex(bytes)
     }
 
-    private static func nextTimestampAndRand12(
-        rng: inout SystemRandomNumberGenerator
-    ) -> (unixMs: UInt64, rand12: UInt16) {
+    private static func nextTimestampAndCounter(
+        nowMs: UInt64,
+        candidate12: UInt16
+    ) -> (unixMs: UInt64, counter: UInt16) {
         lock.lock()
         defer { lock.unlock() }
-        let nowMs = UInt64(Date().timeIntervalSince1970 * 1000)
         var unixMs = nowMs
         var counter: UInt16
         if nowMs > lastUnixMs {
             unixMs = nowMs
-            counter = UInt16.random(in: 0...0x0FFF, using: &rng)
+            counter = candidate12
         } else {
             // Same or earlier ms — keep the larger ms and bump counter.
             unixMs = lastUnixMs
             if lastCounter == 0x0FFF {
                 // Counter would overflow; nudge the ms forward.
+                // Restart counter at a random value to spread load across the new ms bucket.
                 unixMs &+= 1
-                counter = UInt16.random(in: 0...0x0FFF, using: &rng)
+                counter = candidate12
             } else {
                 counter = lastCounter &+ 1
             }
