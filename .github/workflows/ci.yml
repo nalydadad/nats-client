@@ -56,23 +56,21 @@ jobs:
           restore-keys: |
             spm-${{ runner.os }}-xcode${{ env.XCODE_VERSION }}-
 
-      - name: List schemes
-        run: xcodebuild -list || true
-
       - name: Resolve packages
-        run: xcodebuild -resolvePackageDependencies
+        run: swift package resolve
 
-      - name: Test library on iOS Simulator
+      - name: Test library on macOS
+        run: swift test
+
+      - name: Build library for iOS Simulator
         run: |
           set -o pipefail
-          xcodebuild test \
-            -scheme "$LIBRARY_SCHEME"-Package \
+          xcodebuild build \
+            -scheme "$LIBRARY_SCHEME" \
             -destination "$IOS_DESTINATION" \
-            -resultBundlePath TestResults-library.xcresult \
-            -only-testing:NATSChatClientTests \
             | xcbeautify --renderer github-actions
 
-      - name: Build demo on iOS Simulator
+      - name: Build demo for iOS Simulator
         run: |
           set -o pipefail
           xcodebuild build \
@@ -80,10 +78,3 @@ jobs:
             -destination "$IOS_DESTINATION" \
             | xcbeautify --renderer github-actions
         continue-on-error: true
-
-      - name: Upload test results on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: TestResults-library.xcresult
-          path: TestResults-library.xcresult
