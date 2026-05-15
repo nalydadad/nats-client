@@ -194,7 +194,15 @@ final class ChatClientTests: XCTestCase {
 
         let results = try await [a, b, c]
         XCTAssertEqual(results.map(\.content), ["A", "B", "C"])
-        XCTAssertEqual(results.map(\.requestID), reqs.map(\.requestId))
+
+        // Build content → requestId lookup from the publish records (order is non-deterministic).
+        let requestIDByContent = Dictionary(uniqueKeysWithValues: reqs.map { ($0.content, $0.requestId) })
+        for r in results {
+            XCTAssertEqual(r.requestID, requestIDByContent[r.content],
+                           "Result for \(r.content) should match its published requestId")
+        }
+        XCTAssertEqual(Set(results.map(\.requestID)), Set(reqs.map(\.requestId)),
+                       "All three published requestIds should appear in the results")
     }
 
     func test_sendMessage_invalidJSON_throwsInvalidPayload() async throws {
