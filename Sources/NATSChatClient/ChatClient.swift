@@ -59,9 +59,6 @@ public actor ChatClient {
         account = nil
     }
 
-    /// Stub — real implementation lands in Task 9. Always throws `.notStarted`
-    /// (after the started-check) for now so the lifecycle tests can verify
-    /// the not-started path.
     public func sendMessage(
         roomID: String,
         siteID: String,
@@ -71,8 +68,76 @@ public actor ChatClient {
         quotedParentMessageID: String? = nil,
         timeout: TimeInterval? = nil
     ) async throws -> SentMessage {
-        guard account != nil else { throw ChatClientError.notStarted }
-        // Filled in by Task 9.
-        throw ChatClientError.notStarted
+        guard let account = account else { throw ChatClientError.notStarted }
+
+        let id = Base62.randomID(length: 20)
+        let requestID = UUIDv7.next()
+        let subject = Subjects.msgSend(account: account, roomID: roomID, siteID: siteID)
+
+        let body = SendMessageRequest(
+            id: id,
+            content: content,
+            requestId: requestID,
+            threadParentMessageId: threadParentMessageID,
+            threadParentMessageCreatedAt: threadParentMessageCreatedAt,
+            quotedParentMessageId: quotedParentMessageID
+        )
+
+        let encoder = JSONEncoder()
+        let payload: Data
+        do {
+            payload = try encoder.encode(body)
+        } catch {
+            throw ChatClientError.invalidPayload("encode failed: \(error)")
+        }
+
+        await pending.register(requestID)
+        defer { Task { [pending] in await pending.discard(requestID) } }
+
+        do {
+            try await transport.publish(subject: subject, payload: payload)
+        } catch {
+            throw ChatClientError.transport(error)
+        }
+
+        let effectiveTimeout = timeout ?? defaultTimeout
+        let data = try await raceWaitVsTimeout(
+            requestID: requestID,
+            seconds: effectiveTimeout
+        )
+
+        return try decodeReply(data, requestID: requestID)
+    }
+
+    private func raceWaitVsTimeout(
+        requestID: String,
+        seconds: TimeInterval
+    ) async throws -> Data {
+        try await withThrowingTaskGroup(of: Data.self) { group in
+            let p = self.pending
+            group.addTask { try await p.wait(requestID) }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                throw ChatClientError.timeout(requestID: requestID)
+            }
+            let first = try await group.next()!
+            group.cancelAll()
+            return first
+        }
+    }
+
+    private func decodeReply(_ data: Data, requestID: String) throws -> SentMessage {
+        let decoder = JSONDecoder()
+        // Error branch first.
+        if let env = try? decoder.decode(ErrorEnvelopeDTO.self, from: data),
+           !env.error.isEmpty {
+            throw ChatClientError.server(code: env.code, message: env.error)
+        }
+        do {
+            let dto = try decoder.decode(SentMessageDTO.self, from: data)
+            return dto.toModel(requestID: requestID)
+        } catch {
+            throw ChatClientError.invalidPayload("decode failed: \(error)")
+        }
     }
 }
