@@ -106,6 +106,224 @@ final class ChatClientTests: XCTestCase {
         XCTAssertLessThan(elapsed, 1.0, "sendMessage hung past the timeout (took \(elapsed)s)")
     }
 
+    func test_sendMessage_serverErrorReply_throwsServerError() async throws {
+        let transport = MockTransport()
+        let auth = MockAuthProvider(account: "alice")
+        let client = ChatClient(transport: transport, auth: auth)
+        try await client.start()
+
+        let task = Task { [client] in
+            try await client.sendMessage(roomID: "R", siteID: "S", content: "x")
+        }
+        let pub = try await waitForPublish(in: transport)
+        let req = try JSONDecoder().decode(SentBodyJSON.self, from: pub.payload)
+
+        let reply = #"{"error":"forbidden","code":"forbidden"}"#.data(using: .utf8)!
+        await transport.deliver(subject: "chat.user.alice.response.\(req.requestId)", payload: reply)
+
+        do {
+            _ = try await task.value
+            XCTFail("Expected throw")
+        } catch let ChatClientError.server(code, message) {
+            XCTAssertEqual(code, "forbidden")
+            XCTAssertEqual(message, "forbidden")
+        } catch {
+            XCTFail("Wrong error: \(error)")
+        }
+    }
+
+    func test_sendMessage_timeout_throwsTimeoutAndDropsLateReply() async throws {
+        let transport = MockTransport()
+        let auth = MockAuthProvider(account: "alice")
+        let client = ChatClient(transport: transport, auth: auth, defaultTimeout: 0.05)
+        try await client.start()
+
+        let task = Task { [client] in
+            try await client.sendMessage(roomID: "R", siteID: "S", content: "x")
+        }
+        let pub = try await waitForPublish(in: transport)
+        let req = try JSONDecoder().decode(SentBodyJSON.self, from: pub.payload)
+
+        do {
+            _ = try await task.value
+            XCTFail("Expected timeout")
+        } catch let ChatClientError.timeout(id) {
+            XCTAssertEqual(id, req.requestId)
+        } catch {
+            XCTFail("Wrong error: \(error)")
+        }
+
+        // Late reply must not crash and must be silently dropped.
+        let reply = """
+        {"id":"\(req.id)","roomId":"R","userId":"u","userAccount":"alice","content":"x","createdAt":"now"}
+        """.data(using: .utf8)!
+        await transport.deliver(subject: "chat.user.alice.response.\(req.requestId)", payload: reply)
+        // Give the actor a moment to process — and assert we still pass.
+        try await Task.sleep(nanoseconds: 20_000_000)
+    }
+
+    func test_sendMessage_concurrentSends_areDemuxedByRequestID() async throws {
+        let transport = MockTransport()
+        let auth = MockAuthProvider(account: "alice")
+        let client = ChatClient(transport: transport, auth: auth)
+        try await client.start()
+
+        async let a: SentMessage = client.sendMessage(roomID: "R", siteID: "S", content: "A")
+        async let b: SentMessage = client.sendMessage(roomID: "R", siteID: "S", content: "B")
+        async let c: SentMessage = client.sendMessage(roomID: "R", siteID: "S", content: "C")
+
+        // Wait until three publishes are recorded.
+        let deadline = Date().addingTimeInterval(1.0)
+        var pubs: [MockTransport.PublishedMessage] = []
+        while pubs.count < 3, Date() < deadline {
+            pubs = await transport.snapshot()
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTAssertEqual(pubs.count, 3)
+
+        // Parse requestIDs and reply OUT OF ORDER.
+        let reqs = try pubs.map { try JSONDecoder().decode(SentBodyJSON.self, from: $0.payload) }
+        let order = [2, 0, 1]
+        for i in order {
+            let r = reqs[i]
+            let reply = """
+            {"id":"\(r.id)","roomId":"R","userId":"u","userAccount":"alice","content":"\(r.content)","createdAt":"t"}
+            """.data(using: .utf8)!
+            await transport.deliver(subject: "chat.user.alice.response.\(r.requestId)", payload: reply)
+        }
+
+        let results = try await [a, b, c]
+        XCTAssertEqual(results.map(\.content), ["A", "B", "C"])
+        XCTAssertEqual(results.map(\.requestID), reqs.map(\.requestId))
+    }
+
+    func test_sendMessage_invalidJSON_throwsInvalidPayload() async throws {
+        let transport = MockTransport()
+        let auth = MockAuthProvider(account: "alice")
+        let client = ChatClient(transport: transport, auth: auth)
+        try await client.start()
+
+        let task = Task { [client] in
+            try await client.sendMessage(roomID: "R", siteID: "S", content: "x")
+        }
+        let pub = try await waitForPublish(in: transport)
+        let req = try JSONDecoder().decode(SentBodyJSON.self, from: pub.payload)
+
+        await transport.deliver(
+            subject: "chat.user.alice.response.\(req.requestId)",
+            payload: Data("not json".utf8)
+        )
+
+        do {
+            _ = try await task.value
+            XCTFail("Expected throw")
+        } catch ChatClientError.invalidPayload {
+            // ok
+        } catch {
+            XCTFail("Wrong error: \(error)")
+        }
+    }
+
+    func test_sendMessage_publishFailure_throwsTransport() async throws {
+        let transport = MockTransport()
+        let auth = MockAuthProvider(account: "alice")
+        let client = ChatClient(transport: transport, auth: auth)
+        try await client.start()
+
+        struct Boom: Error {}
+        await transport.setPublishError(Boom())
+
+        do {
+            _ = try await client.sendMessage(roomID: "R", siteID: "S", content: "x")
+            XCTFail("Expected throw")
+        } catch ChatClientError.transport {
+            // ok
+        } catch {
+            XCTFail("Wrong error: \(error)")
+        }
+    }
+
+    func test_sendMessage_optionalFields_areOmittedWhenNil() async throws {
+        let transport = MockTransport()
+        let auth = MockAuthProvider(account: "alice")
+        let client = ChatClient(transport: transport, auth: auth)
+        try await client.start()
+
+        let task = Task { [client] in
+            try await client.sendMessage(roomID: "R", siteID: "S", content: "x")
+        }
+        let pub = try await waitForPublish(in: transport)
+        let json = try JSONSerialization.jsonObject(with: pub.payload) as! [String: Any]
+        XCTAssertNil(json["threadParentMessageId"])
+        XCTAssertNil(json["threadParentMessageCreatedAt"])
+        XCTAssertNil(json["quotedParentMessageId"])
+
+        // Reply to let sendMessage complete cleanly.
+        let req = try JSONDecoder().decode(SentBodyJSON.self, from: pub.payload)
+        let reply = """
+        {"id":"\(req.id)","roomId":"R","userId":"u","userAccount":"alice","content":"x","createdAt":"t"}
+        """.data(using: .utf8)!
+        await transport.deliver(subject: "chat.user.alice.response.\(req.requestId)", payload: reply)
+        _ = try await task.value
+    }
+
+    func test_sendMessage_optionalFields_areEncodedWhenProvided() async throws {
+        let transport = MockTransport()
+        let auth = MockAuthProvider(account: "alice")
+        let client = ChatClient(transport: transport, auth: auth)
+        try await client.start()
+
+        let task = Task { [client] in
+            try await client.sendMessage(
+                roomID: "R", siteID: "S", content: "x",
+                threadParentMessageID: "p1",
+                threadParentMessageCreatedAt: 1_700_000_000_000,
+                quotedParentMessageID: "q1"
+            )
+        }
+        let pub = try await waitForPublish(in: transport)
+        let json = try JSONSerialization.jsonObject(with: pub.payload) as! [String: Any]
+        XCTAssertEqual(json["threadParentMessageId"] as? String, "p1")
+        XCTAssertEqual(json["threadParentMessageCreatedAt"] as? Int64, 1_700_000_000_000)
+        XCTAssertEqual(json["quotedParentMessageId"] as? String, "q1")
+
+        let req = try JSONDecoder().decode(SentBodyJSON.self, from: pub.payload)
+        let reply = """
+        {"id":"\(req.id)","roomId":"R","userId":"u","userAccount":"alice","content":"x","createdAt":"t","threadParentMessageId":"p1","threadParentMessageCreatedAt":1700000000000,"quotedParentMessageId":"q1"}
+        """.data(using: .utf8)!
+        await transport.deliver(subject: "chat.user.alice.response.\(req.requestId)", payload: reply)
+        let result = try await task.value
+        XCTAssertEqual(result.threadParentMessageID, "p1")
+        XCTAssertEqual(result.threadParentMessageCreatedAt, 1_700_000_000_000)
+        XCTAssertEqual(result.quotedParentMessageID, "q1")
+    }
+
+    func test_unknownRequestID_onResponseSubject_isDropped() async throws {
+        let transport = MockTransport()
+        let auth = MockAuthProvider(account: "alice")
+        let client = ChatClient(transport: transport, auth: auth, defaultTimeout: 0.05)
+        try await client.start()
+
+        // No registered requests — random reply must not crash anything.
+        await transport.deliver(
+            subject: "chat.user.alice.response.does-not-exist",
+            payload: Data(#"{"id":"x"}"#.utf8)
+        )
+
+        // Subsequent normal send still works.
+        let task = Task { [client] in
+            try? await client.sendMessage(roomID: "R", siteID: "S", content: "x")
+        }
+        let pub = try await waitForPublish(in: transport)
+        let req = try JSONDecoder().decode(SentBodyJSON.self, from: pub.payload)
+        let reply = """
+        {"id":"\(req.id)","roomId":"R","userId":"u","userAccount":"alice","content":"x","createdAt":"t"}
+        """.data(using: .utf8)!
+        await transport.deliver(subject: "chat.user.alice.response.\(req.requestId)", payload: reply)
+        let result = await task.value
+        XCTAssertNotNil(result)
+    }
+
     // MARK: helpers
 
     private struct SentBodyJSON: Decodable {
