@@ -179,7 +179,10 @@ final class ChatClientTests: XCTestCase {
             pubs = await transport.snapshot()
             try await Task.sleep(nanoseconds: 5_000_000)
         }
-        XCTAssertEqual(pubs.count, 3)
+        guard pubs.count == 3 else {
+            XCTFail("Expected 3 publishes, got \(pubs.count)")
+            return
+        }
 
         // Parse requestIDs and reply OUT OF ORDER.
         let reqs = try pubs.map { try JSONDecoder().decode(SentBodyJSON.self, from: $0.payload) }
@@ -261,7 +264,7 @@ final class ChatClientTests: XCTestCase {
             try await client.sendMessage(roomID: "R", siteID: "S", content: "x")
         }
         let pub = try await waitForPublish(in: transport)
-        let json = try JSONSerialization.jsonObject(with: pub.payload) as! [String: Any]
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: pub.payload) as? [String: Any])
         XCTAssertNil(json["threadParentMessageId"])
         XCTAssertNil(json["threadParentMessageCreatedAt"])
         XCTAssertNil(json["quotedParentMessageId"])
@@ -290,7 +293,7 @@ final class ChatClientTests: XCTestCase {
             )
         }
         let pub = try await waitForPublish(in: transport)
-        let json = try JSONSerialization.jsonObject(with: pub.payload) as! [String: Any]
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: pub.payload) as? [String: Any])
         XCTAssertEqual(json["threadParentMessageId"] as? String, "p1")
         XCTAssertEqual(json["threadParentMessageCreatedAt"] as? Int64, 1_700_000_000_000)
         XCTAssertEqual(json["quotedParentMessageId"] as? String, "q1")
