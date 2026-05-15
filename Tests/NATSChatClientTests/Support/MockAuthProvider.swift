@@ -1,5 +1,4 @@
-import Foundation
-@testable import NATSChatClient
+import NATSChatClient
 
 final class MockAuthProvider: AuthProvider {
     let identity: AuthIdentity

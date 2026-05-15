@@ -1,5 +1,5 @@
 import Foundation
-@testable import NATSChatClient
+import NATSChatClient
 
 /// In-memory NATS transport for tests.
 /// - Records every publish so assertions can verify subject/payload.
@@ -20,8 +20,8 @@ actor MockTransport: NATSTransport {
 
     func setPublishError(_ err: (any Error)?) { self.publishError = err }
 
-    /// Test helper: snapshot of recorded publishes (needed because actor-isolated properties
-    /// can't be observed directly from outside).
+    /// Test helper: explicit accessor for use from test helpers; semantically
+    /// equivalent to `await transport.published`.
     func snapshot() -> [PublishedMessage] { published }
 
     // MARK: NATSTransport
@@ -34,10 +34,10 @@ actor MockTransport: NATSTransport {
     func subscribe(subject: String) async throws -> any NATSSubscription {
         var continuation: AsyncStream<NATSMessage>.Continuation!
         let stream = AsyncStream<NATSMessage> { continuation = $0 }
+        assert(subscriptions[subject] == nil, "MockTransport: duplicate subscription for \(subject)")
         subscriptions[subject] = continuation
-        let weakSelf = self
-        return MockSubscription(stream: stream, onCancel: { [subject] in
-            await weakSelf.cancelSubscription(subject: subject)
+        return MockSubscription(stream: stream, onCancel: { [self, subject] in
+            await self.cancelSubscription(subject: subject)
         })
     }
 
@@ -62,13 +62,13 @@ actor MockTransport: NATSTransport {
         if filter == subject { return true }
         if filter.hasSuffix(".>") {
             let prefix = String(filter.dropLast(1)) // keep trailing dot
-            return subject.hasPrefix(prefix)
+            return subject.hasPrefix(prefix) && subject.count > prefix.count
         }
         return false
     }
 }
 
-private struct MockSubscription: NATSSubscription, @unchecked Sendable {
+private struct MockSubscription: NATSSubscription, Sendable {
     let stream: AsyncStream<NATSMessage>
     let onCancel: @Sendable () async -> Void
     var messages: AsyncStream<NATSMessage> { stream }
