@@ -30,4 +30,13 @@ final class SubjectsTests: XCTestCase {
         // Wrong prefix: not chat.user.*.response.*
         XCTAssertNil(Subjects.parseRequestID(fromResponseSubject: "chat.room.alice.response.id"))
     }
+
+    func test_parseRequestID_rejectsWildcardTokens() {
+        XCTAssertNil(Subjects.parseRequestID(fromResponseSubject: "chat.user.alice.response.>"))
+        XCTAssertNil(Subjects.parseRequestID(fromResponseSubject: "chat.user.alice.response.*"))
+    }
+
+    func test_parseRequestID_rejectsTrailingDotSubject() {
+        XCTAssertNil(Subjects.parseRequestID(fromResponseSubject: "chat.user.alice.response."))
+    }
 }
