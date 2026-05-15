@@ -40,4 +40,15 @@ final class ChatClientTests: XCTestCase {
             XCTFail("Wrong error: \(error)")
         }
     }
+
+    func test_startStop_canCycle() async throws {
+        let transport = MockTransport()
+        let auth = MockAuthProvider()
+        let client = ChatClient(transport: transport, auth: auth)
+
+        try await client.start()
+        await client.stop()
+        try await client.start()                // can restart cleanly
+        await client.stop()
+    }
 }

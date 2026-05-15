@@ -11,6 +11,7 @@ public actor ChatClient {
     private var account: String?
     private var subscription: (any NATSSubscription)?
     private var responderTask: Task<Void, Never>?
+    private var startGeneration: Int = 0
 
     public init(
         transport: any NATSTransport,
@@ -26,9 +27,19 @@ public actor ChatClient {
     /// Idempotent — safe to call multiple times.
     public func start() async throws {
         if responderTask != nil { return }
+        startGeneration &+= 1
+        let gen = startGeneration
+
         let identity = try await auth.currentIdentity()
+        guard gen == startGeneration else { return }   // stop() ran during await
+
         let subject = Subjects.userResponseWildcard(account: identity.account)
         let sub = try await transport.subscribe(subject: subject)
+        guard gen == startGeneration else {
+            await sub.cancel()
+            return
+        }
+
         self.account = identity.account
         self.subscription = sub
         let responder = Responder(subscription: sub, pending: pending)
@@ -37,13 +48,14 @@ public actor ChatClient {
 
     /// Cancels the demuxer, fails pending waiters, unsubscribes. Idempotent.
     public func stop() async {
-        responderTask?.cancel()
-        responderTask = nil
-        await pending.cancelAll()
+        startGeneration &+= 1
         if let sub = subscription {
             await sub.cancel()
         }
         subscription = nil
+        await pending.cancelAll()
+        responderTask?.cancel()
+        responderTask = nil
         account = nil
     }
 
