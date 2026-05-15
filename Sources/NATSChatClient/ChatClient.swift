@@ -113,17 +113,30 @@ public actor ChatClient {
         requestID: String,
         seconds: TimeInterval
     ) async throws -> Data {
-        try await withThrowingTaskGroup(of: Data.self) { group in
-            let p = self.pending
-            group.addTask { try await p.wait(requestID) }
+        let p = self.pending
+        let ns = nanoseconds(for: seconds)
+        return try await withThrowingTaskGroup(of: Data.self) { group in
             group.addTask {
-                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                try await withTaskCancellationHandler(
+                    operation: { try await p.wait(requestID) },
+                    onCancel: { Task { await p.discard(requestID) } }
+                )
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: ns)
                 throw ChatClientError.timeout(requestID: requestID)
             }
             let first = try await group.next()!
             group.cancelAll()
             return first
         }
+    }
+
+    private func nanoseconds(for seconds: TimeInterval) -> UInt64 {
+        let ns = seconds * 1_000_000_000
+        guard ns.isFinite, ns >= 0 else { return 0 }
+        if ns >= Double(UInt64.max) { return UInt64.max }
+        return UInt64(ns)
     }
 
     private func decodeReply(_ data: Data, requestID: String) throws -> SentMessage {

@@ -87,6 +87,25 @@ final class ChatClientTests: XCTestCase {
         XCTAssertEqual(result.createdAt, "2026-05-15T00:00:00Z")
     }
 
+    func test_sendMessage_timeout_throwsTimeoutWithoutHanging() async throws {
+        let transport = MockTransport()
+        let auth = MockAuthProvider(account: "alice")
+        let client = ChatClient(transport: transport, auth: auth, defaultTimeout: 0.05)
+        try await client.start()
+
+        let started = Date()
+        do {
+            _ = try await client.sendMessage(roomID: "R", siteID: "S", content: "x")
+            XCTFail("Expected .timeout")
+        } catch let ChatClientError.timeout(id) {
+            XCTAssertFalse(id.isEmpty)
+        } catch {
+            XCTFail("Wrong error: \(error)")
+        }
+        let elapsed = Date().timeIntervalSince(started)
+        XCTAssertLessThan(elapsed, 1.0, "sendMessage hung past the timeout (took \(elapsed)s)")
+    }
+
     // MARK: helpers
 
     private struct SentBodyJSON: Decodable {
