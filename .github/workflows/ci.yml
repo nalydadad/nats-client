@@ -22,11 +22,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install SwiftFormat
-        run: brew install swiftformat
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_${{ env.XCODE_VERSION }}.app
 
-      - name: Lint with SwiftFormat
-        run: swiftformat --lint .
+      - name: Lint with swift-format
+        shell: bash
+        run: |
+          paths=()
+          [ -d Sources ] && paths+=(Sources)
+          [ -d Tests ] && paths+=(Tests)
+          if [ ${#paths[@]} -eq 0 ]; then
+            echo "::notice::No Swift sources to lint yet (Sources/Tests not present)."
+            exit 0
+          fi
+          xcrun swift-format lint --strict --recursive "${paths[@]}"
 
   ios:
     runs-on: macos-15

@@ -6,7 +6,10 @@
 
 References:
 - Project design: `docs/superpowers/specs/2026-05-15-nats-chat-client-design.md`
-- Airbnb SwiftFormat config: `github.com/airbnb/swift/blob/master/Sources/AirbnbSwiftFormatTool/airbnb.swiftformat`
+- Apple swift-format: `github.com/apple/swift-format` (bundled with Xcode 16)
+
+**Revision history:**
+- 2026-05-15 — initial design used Nick Lockwood's `SwiftFormat` with Airbnb's vendored config. Reverted to Apple's `swift-format` after first CI run because Airbnb's config tracks SwiftFormat's `main` branch and uses options (`--type-blank-lines consistent`) not present in any released SwiftFormat. Apple's `swift-format` is bundled with Xcode, so version drift is governed by `XCODE_VERSION`.
 
 ---
 
@@ -28,8 +31,8 @@ Single workflow file at `.github/workflows/ci.yml`. Two jobs run in parallel on 
                 ▼                                   ▼
         ┌───────────────┐               ┌──────────────────────┐
         │ format        │               │ ios                  │
-        │ swiftformat   │               │ xcodebuild test      │
-        │ --lint        │               │   (library on sim)   │
+        │ swift-format  │               │ xcodebuild test      │
+        │ lint --strict │               │   (library on sim)   │
         │ (~1 min)      │               │ xcodebuild build     │
         │               │               │   (demo on sim)      │
         │               │               │ (~3-5 min, 1 boot)   │
@@ -81,19 +84,28 @@ format:
   steps:
     - uses: actions/checkout@v4
 
-    - name: Install SwiftFormat
-      run: brew install swiftformat
+    - name: Select Xcode
+      run: sudo xcode-select -s /Applications/Xcode_${{ env.XCODE_VERSION }}.app
 
-    - name: Lint with SwiftFormat
-      run: swiftformat --lint .
+    - name: Lint with swift-format
+      shell: bash
+      run: |
+        paths=()
+        [ -d Sources ] && paths+=(Sources)
+        [ -d Tests ] && paths+=(Tests)
+        if [ ${#paths[@]} -eq 0 ]; then
+          echo "::notice::No Swift sources to lint yet (Sources/Tests not present)."
+          exit 0
+        fi
+        xcrun swift-format lint --strict --recursive "${paths[@]}"
 ```
 
 Choices:
-- **Tool:** Nick Lockwood's [`SwiftFormat`](https://github.com/nicklockwood/SwiftFormat), not Apple's `swift-format`. The two are not interchangeable — different binaries, different config formats, different rule names.
-- **`brew install swiftformat`** rather than relying on the preinstalled runner version. The Airbnb config targets `--swift-version 6.3` and uses recent rules (`redundantEquatable`, `swiftTestingTestCaseNames`, `redundantMemberwiseInit`); the preinstalled binary can lag a release. Cold install ≈ 30 s on `macos-15`.
-- **`--lint`** runs in check mode — no files modified; exits non-zero on any deviation. This is the gate.
-- **Path `.`** — the vendored config excludes `Carthage,Pods,.build`, so repo-wide scanning is correct. No need to enumerate `Sources Tests`.
-- **No Xcode selection step.** SwiftFormat is a standalone Swift CLI; it does not need Xcode selected.
+- **Tool:** Apple's [`swift-format`](https://github.com/apple/swift-format), bundled with Xcode. No `brew install` step — version is governed by `XCODE_VERSION`.
+- **`xcrun swift-format`** rather than bare `swift-format` so the binary resolved is from the selected Xcode toolchain, even if PATH ordering changes on the runner.
+- **`lint --strict --recursive Sources Tests`** — `--strict` promotes lint diagnostics to errors (non-zero exit). Restricting to `Sources Tests` avoids walking docs, scripts, and vendored dependencies under `.build`.
+- **Empty-tree guard.** Before project init lands, `Sources/` and `Tests/` don't exist; rather than failing on missing paths, the step emits a GitHub Actions notice and exits 0. Once project init merges, both directories appear and lint runs for real.
+- **Rules in `.swift-format`.** Config lives at the repo root in JSON form, auto-discovered by `swift-format`. See §6.
 
 ## 5. Job: `ios`
 
@@ -155,36 +167,43 @@ Choices:
 - **Demo build is the last step** — if the library tests fail, demo build is skipped.
 - **`xcodebuild build` (not `test`) for the demo.** It's an app target with no test bundle; we only verify it compiles and links.
 
-## 6. `.swiftformat` config
+## 6. `.swift-format` config
 
-Vendored verbatim from `airbnb/swift@master` (`Sources/AirbnbSwiftFormatTool/airbnb.swiftformat`) at the repo root. We do not fetch live — bumps are deliberate, performed by re-vendoring the upstream file and reviewing the diff.
+JSON file at the repo root. Apple's `swift-format` auto-discovers `.swift-format` in the current directory or any ancestor.
 
-Notable settings inherited from Airbnb:
-- **2-space indent, 130-char max width.**
-- **`--swift-version 6.3`, `--language-mode 5`** — matches Xcode 16.2's Swift compiler. If we ever downgrade Xcode, this value must come down too.
-- **Test-target rules** (`noForceTryInTests`, `noForceUnwrapInTests`, `noGuardInTests`, `testSuiteAccessControl`) — SwiftFormat scopes them automatically by detecting test files.
-- **Opt-in rule list** — only rules listed under `--rules ...` execute; anything not listed is off.
-
-Excerpt of the first ~25 lines (full file is ~150 lines and lives at `.swiftformat`):
-
+```json
+{
+  "version": 1,
+  "lineLength": 120,
+  "indentation": { "spaces": 4 },
+  "tabWidth": 4,
+  "respectsExistingLineBreaks": true,
+  "lineBreakBeforeControlFlowKeywords": false,
+  "lineBreakBeforeEachArgument": true,
+  "indentConditionalCompilationBlocks": false,
+  "rules": {
+    "AllPublicDeclarationsHaveDocumentation": false,
+    "AlwaysUseLowerCamelCase": true,
+    "AmbiguousTrailingClosureOverload": true,
+    "NoLeadingUnderscores": false,
+    "OrderedImports": true,
+    "UseLetInEveryBoundCaseVariable": true,
+    "UseShorthandTypeNames": true,
+    "UseSingleLinePropertyGetter": true,
+    "UseSynthesizedInitializer": true,
+    "UseTripleSlashForDocumentationComments": true,
+    "ValidateDocumentationComments": false
+  }
+}
 ```
-# Exclude checkout directories for common package managers
---exclude Carthage,Pods,.build
 
---swift-version 6.3
---language-mode 5
---self remove
---import-grouping testable-bottom
---trailing-commas multi-element-lists
---trim-whitespace always
---indent 2
---ifdef no-indent
---indent-strings true
---wrap-arguments before-first
---wrap-parameters before-first
---wrap-collections before-first
-...
-```
+Rationale for the deltas from default:
+- **`lineLength: 120`** — defaults to 100; 120 reduces noisy wraps on Swift's verbose generics.
+- **`AllPublicDeclarationsHaveDocumentation: false`** and **`ValidateDocumentationComments: false`** — DocC validation is a separate hardening pass, not v1 scope.
+- **`OrderedImports: true`** — small, mechanical, prevents merge-conflict noise.
+- Everything else stays at Apple's recommended defaults.
+
+This is a v1 config — intentionally small. Tighten over time once the codebase exists.
 
 ## 7. Project-side assumptions
 
@@ -204,11 +223,11 @@ If any of these names change at init time, the workflow's env vars are the only 
 - **Xcode path assumption.** `sudo xcode-select -s /Applications/Xcode_16.2.app` assumes that exact version is preinstalled. If GitHub removes 16.2 before we bump, the select step fails. Bump within ~6 months of GitHub adding a newer Xcode.
 - **Cache invalidation.** The SwiftPM cache key includes `Package.resolved` hash and Xcode version. Before the first resolve, the hash is empty and the restore-keys fallback may pick up older entries — acceptable for v1.
 - **Branch protection.** Configure `format` and `ios` as required status checks on `main` after the first successful CI run. Outside this workflow.
-- **Local parity.** Developers running `swiftformat --lint .` locally against the same binary version see the same result as CI. No pre-commit hook is added in this spec.
+- **Local parity.** Developers running `xcrun swift-format lint --strict --recursive Sources Tests` locally with the same Xcode version see the same result as CI. No pre-commit hook is added in this spec.
 
 ## 9. Files added to the repo
 
 | Path | Purpose |
 |---|---|
 | `.github/workflows/ci.yml` | The two-job workflow (Sections 3-5) |
-| `.swiftformat` | Vendored Airbnb config (Section 6) |
+| `.swift-format` | swift-format JSON config (Section 6) |
