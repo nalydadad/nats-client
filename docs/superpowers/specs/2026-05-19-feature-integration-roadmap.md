@@ -28,6 +28,16 @@ It DOES specify: what each sub-project covers, what it depends on, and what orde
 
 ---
 
+## Cross-cutting concerns inherited from v1
+
+Pinned once here so individual sub-projects don't re-litigate them.
+
+- **Decode-error policy.** Malformed JSON from the server surfaces as `ChatClientError.invalidPayload` (`ChatClient.swift:153–154`). Group A sub-projects MUST reuse this; Group B streams MUST surface decode errors to consumers without closing the stream (one bad frame ≠ stream death).
+- **`ChatClient.stop()` semantics.** v1 cancels the demuxer, fails all `PendingRequests` waiters with `.transport(CancellationError)`, and unsubscribes (`ChatClient.swift:50–60`). Group A sub-projects inherit this unchanged. **Group B's `stop()` behavior is part of B0's scope** — pin it once there so B1–B4 don't each invent their own.
+- **Reconnect / resubscribe is NOT addressed by any sub-project here.** v1 has no NATS reconnect story; neither does this roadmap. When a transport reconnect drops the response subscription or any Group B subscription, in-flight requests and live streams are left to whatever the transport adapter chooses. A future resilience roadmap (the deferred Group D / F work) owns this.
+
+---
+
 ## Sub-projects
 
 ### Group A — §3 typed req/reply services
@@ -42,8 +52,9 @@ These reuse the existing `chat.user.{account}.response.>` subscription and the `
 - Internal `request<Req: Encodable, Rep: Decodable>(subject:body:timeout:) async throws -> Rep` on `ChatClient` (or a sibling actor).
 - Handles: requestID generation, `PendingRequests.register` before publish, JSON encode, publish, race with timeout, error-envelope branch, decode.
 - `sendMessage` is refactored to call it; its public behavior must not change.
+- **Note on secondary identifiers:** v1's `sendMessage` generates two IDs — `requestID` (the demuxer key, owned by the helper) and `id` (a Base62 message ID embedded in the message body, sendMessage-specific). The generic helper only knows about `requestID`. Any §3 sub-project that needs a similar client-generated entity ID puts it in its own request body, not the helper signature.
 
-**Depends on:** nothing (pure refactor of v1 code).
+**Depends on:** nothing (pure refactor of v1 code). References v1 §6–§8 (send flow / demuxer).
 
 **Done when:** existing tests pass unchanged; new internal helper has its own unit tests covering the encode/decode/timeout path with a generic DTO.
 
@@ -92,6 +103,7 @@ These introduce a second subscription model: long-lived, per-key (per-room or pe
 - Holds at most one underlying `NATSSubscription` per key.
 - Cancels and unsubscribes when no consumers remain.
 - Surfaces decode errors to consumers without killing the stream (one bad frame must not silently close all consumers).
+- **Pins `ChatClient.stop()` semantics for streams** — what happens to active consumer iterators when `stop()` is called (terminate cleanly? throw?). B1–B4 inherit whatever B0 decides; don't redecide per stream.
 
 **Depends on:** nothing — orthogonal to Group A.
 
@@ -121,6 +133,8 @@ These introduce a second subscription model: long-lived, per-key (per-room or pe
 
 **Done when:** as B1, plus whatever symmetric publish (if presence requires the client to announce itself) is also exercised.
 
+**Escape hatch:** if brainstorm reveals presence needs a roster/cache layer (online users in a room, last-seen, etc.), split into B3-a (raw event stream) and B3-b (roster cache) before writing the plan.
+
 #### B4 — Typing indicator
 
 **Goal:** public API for typing start/stop — bidirectional (subscribe to others' typing + publish own typing).
@@ -128,6 +142,8 @@ These introduce a second subscription model: long-lived, per-key (per-room or pe
 **Depends on:** B0. (Independent of B1–B3.)
 
 **Done when:** subscribe and publish paths both covered; tests confirm publish does not echo into local stream unless the server does so.
+
+**Escape hatch:** if brainstorm reveals typing needs debounce/throttle on the publish side, split into B4-a (subscribe) and B4-b (publish with rate limit) before writing the plan.
 
 ---
 
@@ -157,15 +173,15 @@ For each sub-project, when its turn comes:
 
 ## Status table
 
-| # | Sub-project | Design | Plan | Done |
-|---|-------------|--------|------|------|
-| A0 | Req/reply infra extraction | — | — | ☐ |
-| A1 | Room service | — | — | ☐ |
-| A2 | History service | — | — | ☐ |
-| A3 | Search service | — | — | ☐ |
-| A4 | User service | — | — | ☐ |
-| B0 | Subscription lifecycle infra | — | — | ☐ |
-| B1 | Room event stream | — | — | ☐ |
-| B2 | User notification stream | — | — | ☐ |
-| B3 | Presence | — | — | ☐ |
-| B4 | Typing indicator | — | — | ☐ |
+| # | Sub-project | Blocked by | Design | Plan | Done |
+|---|-------------|------------|--------|------|------|
+| A0 | Req/reply infra extraction | — | — | — | ☐ |
+| A1 | Room service | A0 | — | — | ☐ |
+| A2 | History service | A0 | — | — | ☐ |
+| A3 | Search service | A0 | — | — | ☐ |
+| A4 | User service | A0 | — | — | ☐ |
+| B0 | Subscription lifecycle infra | — | — | — | ☐ |
+| B1 | Room event stream | B0 | — | — | ☐ |
+| B2 | User notification stream | B0 | — | — | ☐ |
+| B3 | Presence | B0 | — | — | ☐ |
+| B4 | Typing indicator | B0 | — | — | ☐ |
