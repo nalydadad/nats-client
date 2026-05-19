@@ -14,7 +14,10 @@ env:
   XCODE_VERSION: "16.2"
   LIBRARY_SCHEME: "NATSChatClient"
   DEMO_SCHEME: "ChatClientDemo"
-  IOS_DESTINATION: "platform=iOS Simulator,name=iPhone 16,OS=latest"
+  # Build-only destination — avoids depending on a specific simulator runtime
+  # (e.g. iPhone 16 / iOS 18) being present on the macos-15 runner image,
+  # which has drifted in the past and broken `name=iPhone N,OS=latest`.
+  IOS_DESTINATION: "generic/platform=iOS Simulator"
 
 jobs:
   format:
@@ -61,6 +64,10 @@ jobs:
 
       - name: Test library on macOS
         run: swift test
+
+      - name: Show available iOS Simulator destinations (diagnostic)
+        if: always()
+        run: xcodebuild -scheme "$LIBRARY_SCHEME" -showdestinations | grep -E "platform:iOS" || true
 
       - name: Build library for iOS Simulator
         run: |
